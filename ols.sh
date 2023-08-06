@@ -193,9 +193,9 @@ function create_site {
     #修改所有者
     chown -R $user:$group $doc_folder/
     #修改目录权限
-    find $doc_folder/ -type d -exec chmod 750 {} \;
+    find $doc_folder/ -type d -exec chmod 777 {} \;
     #修改文件权限
-    find $doc_folder/ -type f -exec chmod 640 {} \;
+    find $doc_folder/ -type f -exec chmod 777 {} \;
     cd $run_path
     systemctl restart lsws
     clear

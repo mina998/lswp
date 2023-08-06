@@ -107,9 +107,9 @@ function restore2 {
     #修改所有者
     chown -R $user:$group $doc_folder/
     #修改目录权限
-    find $doc_folder/ -type d -exec chmod 750 {} \;
+    find $doc_folder/ -type d -exec chmod 777 {} \;
     #修改文件权限
-    find $doc_folder/ -type f -exec chmod 640 {} \;
+    find $doc_folder/ -type f -exec chmod 777 {} \;
     #重载配置
     service lsws force-reload
     echoGC '操作完成.'
