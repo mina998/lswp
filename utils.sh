@@ -130,17 +130,4 @@ function query_domain {
     done
     echo ''
 }
-# 获取域名解析结果
-function dns_query {
-    local vhost=$1
-    local local_ip=$(query_public_ip)
-    if (ping -c 2 $vhost &>/dev/null); then
-        local domain_ip=$(ping $vhost -c 1 | sed '1{s/[^(]*(//;s/).*//;q}')
-        if [ "$local_ip" != "$domain_ip" ]; then
-            echo $domain_ip
-        fi
-    else
-        echo '0.0.0.0'
-    fi
-}
 
