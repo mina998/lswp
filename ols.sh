@@ -85,7 +85,12 @@ function install_php_my_admin {
         return $?
     fi
     local example=$ols_root/Example
-    cd $example
+    #切换工作目录
+    cd $example  
+    if [ -d "phpMyAdmin" ]; then
+        echoCC '检测到phpMyAdmin已安装!'
+        return $?
+    fi
     #下载phpMyAdmin程序
     wget -O phpMyAdmin.zip https://files.phpmyadmin.net/phpMyAdmin/4.9.10/phpMyAdmin-4.9.10-all-languages.zip
     #解压文件
