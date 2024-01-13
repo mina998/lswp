@@ -1,0 +1,29 @@
+name: Update
+
+on:
+  push:
+    branches:
+      - new 
+
+permissions:
+    contents: write
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Update
+        run: |
+          bash ./builder.sh
+
+      - name: Push
+        run: |
+          git config --local user.email "iosss@qq.com"
+          git config --local user.name "soroy"
+          git add .
+          git commit -m "Update File form GitHub Actions"
+          git push

@@ -1,0 +1,61 @@
+
+docRoot                   $VH_ROOT/public_html
+
+errorlog /www/replace_path/logs/debug.log {
+  useServer               0
+  logLevel                DEBUG
+  rollingSize             10M
+  keepDays                7
+}
+
+index  {
+    useServer               0
+    indexFiles              index.php
+}
+
+scripthandler  {
+    add                     lsapi:lsphp81 php
+}
+
+phpIniOverride  {
+    php_value post_max_size = 500M
+    php_value upload_max_filesize = 500M
+}
+
+extprocessor lsphp81 {
+    type                    lsapi
+    address                 uds://tmp/lshttpd/lsphp81.sock
+    maxConns                10
+    env                     PHP_LSAPI_CHILDREN=10
+    env                     LSAPI_AVOID_FORK=200M
+    initTimeout             60
+    retryTimeout            0
+    persistConn             1
+    respBuffer              0
+    autoStart               2
+    path                    lsphp81/bin/lsphp
+    extUser                 php_ext_user
+    extGroup                php_ext_user
+}
+
+context / {
+    location                $DOC_ROOT
+    allowBrowse             1
+    indexFiles              index.php, index.html
+
+    rewrite  {
+        enable              1
+        inherit             1
+        rewriteFile         .htaccess
+    }
+}
+
+rewrite  {
+    enable                  1
+    autoLoadHtaccess        1
+}
+
+vhssl  {
+    keyFile                 /www/replace_path/cert/ssl.key
+    certFile                /www/replace_path/cert/ssl.crt
+}
