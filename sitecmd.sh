@@ -294,7 +294,7 @@ function scheduled_tasks_backup_to_github {
     fi
     local m=$(random_number 60)
     local h=$(random_number 12)
-    echo -ne "$BC站点自动备份GITHU(y/n):$ED "
+    echo -ne "$BC站点自动备份GITHUB[回车退出](y/n):$ED "
     read -a site_backup_auto_git_on
     # 如果没有输入就退出
     if [ -z "$site_backup_auto_git_on" ]; then
