@@ -6,7 +6,7 @@ function backup2 {
         echoCC "输入有误."
         return $?
     fi
-    local db_name=$(echo $input_value | sed 's/\./_/g')
+    local db_name=$(name_from_str $input_value)
     if [ ! -n "$(is_db_exist $db_name)" ]; then
         echoCC "数据库不存在."
         return $?
