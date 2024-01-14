@@ -154,7 +154,7 @@ function delete_site {
     #删除虚拟主机空间目录
     rm -rf $web_root
     echoGC "站点所有文件删除完成."
-    #检测数据库是否存在
+    #定义数据库名
     local db_name=$(name_from_str $input_value)
     local ug_user=$db_name
     #删除用户和组 db_name 和 db_user 是同一个
@@ -163,6 +163,9 @@ function delete_site {
     if id $ug_user >/dev/null 2>&1; then
         userdel $ug_user
     fi
+    #删除计划任务
+    local temp_str="$ols_root/backup/github.sh $input_value"
+    crontab -l | grep -v "$temp_str" | crontab -
     #删除用户组
     if getent group $ug_user >/dev/null; then
         groupdel $ug_user
