@@ -144,8 +144,7 @@ function create_site {
     #验证域名
     verify_domain
     #检测LSWS配置文件
-    local lsws_hc=$ols_root/conf/httpd_config.conf
-    [ ! -f $lsws_hc ] && echoRC "服务器致命错误." && exit 0
+    [ ! -f $cf_lsws ] && echoRC "服务器致命错误." && exit 0
     #域名是否绑定到其他站点
     local is_domain=$(query_domain "$input_value")
     if [ -n "$is_domain" ]; then
@@ -181,9 +180,9 @@ function create_site {
     cat ./vm/default | sed "s/replace_path/$input_value/" > $vhost_path/default
     cat ./vm/vhconf.81 | sed "s/replace_path/$input_value/" | sed "s/php_ext_user/$ug_user/g" > $vhost_path/vhconf.81
     #在主配置文件中指定虚拟主机配置信息
-    cat ./httpd/vhost | sed "s/\$host_name/$input_value/" | sed "s/\$VH_NAME/$input_value/g" >> $lsws_hc
+    cat ./httpd/vhost | sed "s/\$host_name/$input_value/" | sed "s/\$VH_NAME/$input_value/g" >> $cf_lsws
     #添加网站端口
-    sed -i "/listener HTTPs* {/a map        $input_value $input_value" $lsws_hc
+    sed -i "/listener HTTPs* {/a map        $input_value $input_value" $cf_lsws
     #设置权限
     chown -R lsadm:$group $vhost_path
     #创建数据库和用户
@@ -286,12 +285,19 @@ function reset_db_admin_password {
 }
 # 切换PHP版本
 function switch_php_version {
+    echoBC "0)默认版本 1)PHP8.1"
+    echo -ne "${BC}请选择: ${ED}"
+    read -a version_php_no
+    if [ -z "$version_php_no" ]; then
+        echoCC "已退出"
+        return $?
+    fi
     # 切换到默认版本
-    if [ "$1" = 1 ]; then
+    if [ "$version_php_no" == "0" ]; then
         sed -i "s/\($input_value\/\).*\.81/\1default/" $cf_lsws
     fi
     # 切换到PHP81版本
-    if [ "$1" = 2 ]; then
+    if [ "$version_php_no" == "1" ]; then
         sed -i "s/\($input_value\/\)default/\1vhconf.81/" $cf_lsws
     fi
     systemctl restart lsws
@@ -335,9 +341,8 @@ function site_cmd {
         echo -e "${YC}2${ED}.${LG}还原${ED}"
         echo -e "${YC}3${ED}.${LG}删除备份${ED}"
         echo -e "${YC}4${ED}.${LG}删除站点${ED}"
-        echo -e "${YC}5${ED}.${LG}切换到默认PHP版本${ED}"
-        echo -e "${YC}6${ED}.${LG}切换到PHP81版本${ED}"
-        echo -e "${YC}7${ED}.${LG}定时备份到本机${ED}"
+        echo -e "${YC}5${ED}.${LG}切换PHP版本${ED}"
+        echo -e "${YC}6${ED}.${LG}定时备份到本机${ED}"
         echo -e "${YC}a${ED}.${LG}定时备份到GITHUB${ED}"
         echo -e "${YC}d${ED}.${LG}追加域名${ED}"
         echo -e "${YC}f${ED}.${LG}安装证书${ED}"
@@ -349,9 +354,8 @@ function site_cmd {
             2) restore2 ;;
             3) del_backup_file ;;
             4) delete_site ;;
-            5) switch_php_version 1 ;;
-            6) switch_php_version 2 ;;
-            7) scheduled_tasks_backup_to_local $input_value ;;
+            5) switch_php_version ;;
+            6) scheduled_tasks_backup_to_local $input_value ;;
             a) scheduled_tasks_backup_to_github $input_value ;;
             d) domain_add ;;
             f) cert_ssl_install ;;
