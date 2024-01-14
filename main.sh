@@ -285,8 +285,8 @@ function reset_db_admin_password {
 }
 # 切换PHP版本
 function switch_php_version {
-    echoBC "0)默认版本 1)PHP8.1"
-    echo -ne "${BC}请选择: ${ED}"
+    echo -e "${CC}0. ${LG}默认版本 ${CC}1. ${LG}PHP8.1${ED}"
+    echo -ne "${BC}请选择(直接回车退出): ${ED}"
     read -a version_php_no
     if [ -z "$version_php_no" ]; then
         echoCC "已退出"
