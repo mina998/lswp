@@ -23,10 +23,10 @@ if [ -n "$(is_db_exist $db_name)" ]; then
 fi
 # 切换目录
 cd $web_root/backup || exit 
-# 清理备份文件(只保留最近备份的20个文件)
+# 备份文件列表
 backup_files=($(ls -tr *.task.web.tar.gz 2>/dev/null))
 # 设置要保留的备份文件数量
-keep_count=4
+keep_count=29
 # 计算要删除的备份文件数量
 delete_count=$(( ${#backup_files[@]} - $keep_count ))
 # 删除多余的备份文件
