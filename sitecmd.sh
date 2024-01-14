@@ -164,8 +164,8 @@ function delete_site {
         userdel $ug_user
     fi
     #删除计划任务
-    local temp_str="$ols_root/backup/github.sh $input_value"
-    crontab -l | grep -v "$temp_str" | crontab -
+    crontab -l | grep -v "$ols_root/backup/local.sh $input_value" | crontab -
+    crontab -l | grep -v "$ols_root/backup/github.sh $input_value" | crontab -
     #删除用户组
     if getent group $ug_user >/dev/null; then
         groupdel $ug_user
