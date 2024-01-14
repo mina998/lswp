@@ -310,7 +310,7 @@ function scheduled_tasks_backup_to_github {
         fi
         # 删除指定任务并导出(不导出不行呀,没找出其他方法)
         crontab -l | grep -v "$temp_str" > .crontab
-        echo "$m $h */4 * * $temp_str $repo_name" >> .crontab
+        echo "$m $h */2 * * $temp_str $repo_name" >> .crontab
         # 添加新的任务
         crontab .crontab
         rm .crontab
