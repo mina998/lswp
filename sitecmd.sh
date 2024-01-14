@@ -273,6 +273,8 @@ function cert_ssl_install {
 }
 # 定时备份GITHUB
 function scheduled_tasks_backup_to_github {
+    # 备份间隔天数
+    local day=2
     # 获取github token
     local github=/root/.lsws/github
     if [ -f $github ]; then
@@ -310,11 +312,11 @@ function scheduled_tasks_backup_to_github {
         fi
         # 删除指定任务并导出(不导出不行呀,没找出其他方法)
         crontab -l | grep -v "$temp_str" > .crontab
-        echo "$m $h */2 * * $temp_str $repo_name" >> .crontab
+        echo "$m $h */$day * * $temp_str $repo_name" >> .crontab
         # 添加新的任务
         crontab .crontab
         rm .crontab
-        echoGC "$m $h */4 * * $temp_str $repo_name"
+        echoGC "$m $h */$day * * $temp_str $repo_name"
     else
         crontab -l | grep -v "$temp_str" | crontab -
         echoGC "自动备份已关闭"
@@ -328,6 +330,8 @@ function random_number {
 }
 # 定时备份LOCAL
 function scheduled_tasks_backup_to_local {
+    # 备份间隔天数
+    local day=4
     local temp_str="$ols_root/backup/local.sh $1"
     crontab -l | grep "$temp_str" > /dev/null
     if [ $? -eq 0 ]; then
@@ -350,10 +354,10 @@ function scheduled_tasks_backup_to_local {
     if [ "$site_backup_auto_on" = "y" ]; then
         # 删除指定任务并导出(不导出不行呀,没找出其他方法)
         crontab -l | grep -v "$temp_str" > .crontab
-        echo "$m $h */4 * * $temp_str" >> .crontab
+        echo "$m $h */$day * * $temp_str" >> .crontab
         crontab .crontab
         rm .crontab
-        echoLG "$m $h */4 * * $temp_str"
+        echoLG "$m $h */$day * * $temp_str"
         echoGC "只保留最近30次备份数据"
     else
         crontab -l | grep -v "$temp_str" | crontab -
