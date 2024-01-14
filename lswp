@@ -90,6 +90,9 @@ function check_ols_exist {
         return $?
     fi
 }
+function name_from_str {
+    echo "$1" | sed 's/\./_/g' | sed 's/-/_/g'
+}
 function verify_domain {
     while true; do
         echo -ne "$BC请输入域名(eg:www.demo.com):$ED "
@@ -197,7 +200,7 @@ function backup2 {
         echoCC "输入有误."
         return $?
     fi
-    local db_name=$(echo $input_value | sed 's/\./_/g')
+    local db_name=$(name_from_str $input_value)
     if [ ! -n "$(is_db_exist $db_name)" ]; then
         echoCC "数据库不存在."
         return $?
@@ -247,7 +250,7 @@ function restore2 {
         echoCC '找不到SQL文件'
         return $?
     fi
-    local db_name=$(echo $input_value | sed 's/\./_/g')
+    local db_name=$(name_from_str $input_value)
     drop_db_tables "$db_name"
     mysql "$db_name" < $db_back
     rm $db_back
@@ -298,7 +301,7 @@ function delete_site {
     echoGC "站点配置文件删除完成."
     rm -rf $web_root
     echoGC "站点所有文件删除完成."
-    local db_name=$(echo $input_value | sed 's/\./_/g')
+    local db_name=$(name_from_str $input_value)
     if [ -n $(is_db_exist "$db_name") ]; then
         local db_user=$(mysql -Nse "select distinct user from mysql.db where db = '$db_name';")
         if [ -n "$db_user" ]; then
@@ -479,7 +482,7 @@ function create_site {
         echoCC "[$input_value]站点已存在."
         return $?
     fi
-    local db_name=$(echo $input_value | sed 's/\./_/g')
+    local db_name=$(name_from_str $input_value)
     local db_user=$(random_str 12)
     local db_pass=$(random_str 10)
     if [ -n "$(is_db_exist $db_name)" ]; then
@@ -619,7 +622,5 @@ function menu {
     done
     clear
 }
-echoGC "WordPress外贸建站学习QQ群:783107859"
 echoCC "仅支持Debian[9, 10, 11] 和 Ubuntu[18.04, 20.04]"
 menu
-
