@@ -1,0 +1,625 @@
+RC="\033[38;5;196m"; RR="\033[31m"; GC="\033[38;5;82m"; LG="\033[38;5;72m"; BC="\033[39;1;34m"; SB="\033[38;5;45m"
+CC="\033[38;5;208m"; PC="\033[38;5;201m"; YC="\033[38;5;148m"; ED="\033[0m";
+
+function echoRC {
+    echo -e "$RC${1}$ED"
+}
+function echoRR {
+    echo -e "$RR${1}$ED"
+}
+function echoGC {
+    echo -e "$GC${1}$ED"
+}
+function echoLG {
+    echo -e "$LG${1}$ED"
+}
+function echoBC {
+    echo -e "$BC${1}$ED"
+}
+function echoSB {
+    echo -e "$SB${1}$ED"
+}
+function echoCC {
+    echo -e "$CC${1}$ED"
+}
+function echoPC {
+    echo -e "$PC${1}$ED"
+}
+function echoYC {
+    echo -e "$YC${1}$ED"
+}
+
+[ $(id -u) -gt 0 ] && echoCC "请以root身份运行." && exit 0
+run_path=/usr/local/bin
+ols_root=/usr/local/lsws
+vhs_root=/www
+user=nobody
+group=nogroup
+doc_folder=public_html
+db_back=db.sql
+cf_lsws=$ols_root/conf/httpd_config.conf
+input_value=''
+debian='9 10 11'
+ubuntu='18.04 20.04'
+os_name=$(cat /etc/os-release | grep ^ID= | cut -d = -f 2)
+if [ -z "$os_name" ]; then
+    echoCC '不支持的系统类型'
+    exit 0
+fi
+if [ -v $os_name ]; then
+    if [ "$os_name" = "debian" ]; then
+        os_version=$(cat /etc/os-release | grep VERSION_CODENAME= | cut -d = -f 2)
+    else
+        os_version=$(cat /etc/os-release | grep ^UBUNTU_CODENAME= | cut -d = -f 2)
+    fi
+else
+    echoCC '不支持的系统类型'
+    exit 0
+fi
+cd $run_path
+function random_str {
+    local length=10
+    [ -n "$1" ] && length=$1
+    echo $(head -c $length /dev/urandom | base64 | tr -d '/' | tr -d '=')
+}
+function is_db_exist {
+    echo $(mysql -Nse "show DATABASES like '$1'")
+}
+function query_public_ip {
+    echo $(wget -U Mozilla -qO - http://ip.42.pl/raw)
+}
+function firewall_rules_create {
+    if [ -z "$(which iptables)" ]; then
+        return $?
+    fi
+    cat ./httpd/firewall > /etc/iptables.rules
+    cat ./httpd/rc.local > /etc/rc.local
+    local ssh=$(ss -tapl | grep sshd | awk 'NR==1 {print $4}' | cut -f2 -d :)
+    [ -n "$ssh" ] && sed -i "s/22,80/$ssh,80/" /etc/iptables.rules
+    chmod +x /etc/rc.local
+    systemctl start rc-local
+    echoGC "重写防火墙规则完成."
+}
+function check_ols_exist {
+    if [ ! -f "$ols_root/bin/lswsctrl" ]; then
+        echo "OpenLiteSpeed未安装"
+        return $?
+    fi
+    if [ ! -f "/usr/bin/mariadb" ]; then
+        echo "MariaDB未安装"
+        return $?
+    fi
+}
+function verify_domain {
+    while true; do
+        echo -ne "$BC请输入域名(eg:www.demo.com):$ED "
+        read -a input_value
+        input_value=$(echo $input_value | tr 'A-Z' 'a-z')
+        input_value=$(echo $input_value | awk '/^[a-z0-9][-a-z0-9]{0,62}(\.[a-z0-9][-a-z0-9]{0,62})+$/{print $0}')
+        if [ -z "$input_value" ]; then
+            echoYC "域名有误,请重新输入!!!"
+            continue
+        fi
+        break
+    done
+}
+function query_vm_host {
+    if [ ! -f $cf_lsws ]; then
+        echoCC "未找到服务器配置文件."
+        exit 0
+    fi
+    echo $(grep -i 'virtualHost' $cf_lsws | grep -v 'Example' | awk '{print $2}')
+}
+function display_vm_host {
+    local vhost_list=(`query_vm_host`)
+    host_name=; i=0
+    while [[ $i -lt ${#vhost_list[@]} ]]; do
+        echo -e "${CC}${i})${ED} ${vhost_list[$i]}"
+        let i++ 
+    done
+    [ $i -eq 0 ] && echoCC "没有可选站点."
+    while [[ $i -gt 0 ]] ; do
+        echo -ne "${BC}请选择域名,输入序号:${ED}"
+        read -a num
+        expr $num - 1 &> /dev/null
+        if [ $? -lt 2 ]; then
+            [ -n "${vhost_list[$num]}" ] && input_value=${vhost_list[$num]} && break
+        fi
+        echoYC "输入有误."
+    done
+}
+function install_wp {
+    if [ ! -e /usr/local/bin/wp ] && [ ! -e /usr/bin/wp ]; then 
+        wget -Nq https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+        if [ $? -gt 0 ]; then
+            echo 'this a temp site.' > index.php
+            echoRR "${RC}安装WP CLI失败${ED}, ${CC}初始化成一个空站点."
+            return $?
+        fi 
+        chmod +x wp-cli.phar
+        echo $PATH | grep '/usr/local/bin' >/dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            mv wp-cli.phar /usr/local/bin/wp
+        else
+            mv wp-cli.phar /usr/bin/wp
+        fi
+    fi
+    echo -ne "$BC请输入站点管理员账号(默认:admin):$ED "
+    read -a wp_user; [ -z "$wp_user" ] && wp_user=admin 
+    echo -ne "$BC请输入站点管理员密码(默认:admin):$ED "
+    read -a wp_pass; [ -z "$wp_pass" ] && wp_pass=admin
+    echo -ne "$BC请输入站点管理员邮箱(默认:admin@$input_value):$ED "
+    read -a wp_mail; [ -z "$wp_mail" ] && wp_mail="admin@$input_value"
+    wp core download --allow-root
+    cat $run_path/vm/htaccess > .htaccess
+    local db_name; local db_user; local db_pass; eval "$1" "$2" "$3"
+    local db_prefix=$(random_str 2)_
+    wp config create --dbname=$db_name --dbuser=$db_user --dbpass=$db_pass --dbprefix=$db_prefix --allow-root --quiet
+    wp core install --url="http://$input_value" --title="My Blog" --admin_user=$wp_user --admin_password=$wp_pass --admin_email=$wp_mail --skip-email --allow-root
+}
+function drop_db_tables {
+    local db_name=$1
+    if [ ! -n "$(is_db_exist $db_name)" ]; then
+        echoCC "数据库不存在."
+        return $?
+    fi
+    conn="mysql -D$db_name -s -e"
+    drop=$($conn "SELECT concat('DROP TABLE IF EXISTS ', table_name, ';') FROM information_schema.tables WHERE table_schema = '${db_name}'")
+    $($conn "SET foreign_key_checks = 0; ${drop}")
+}
+function query_domain {
+    local domain=$1
+    local domain_list=$(grep -o 'map.*' $cf_lsws | grep -oE "[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+    for item in $domain_list; do
+        if [ "$domain" = "$item" ]; then
+            echo '域名已绑定到其它虚拟机.'
+            break
+        fi
+    done
+    echo ''
+}
+function dns_query {
+    local vhost=$1
+    local local_ip=$(query_public_ip)
+    if (ping -c 2 $vhost &>/dev/null); then
+        local domain_ip=$(ping $vhost -c 1 | sed '1{s/[^(]*(//;s/).*//;q}')
+        if [ "$local_ip" != "$domain_ip" ]; then
+            echo $domain_ip
+        fi
+    else
+        echo '0.0.0.0'
+    fi
+}
+
+function backup2 {
+    cd $web_root/$doc_folder
+    if [ -z "$input_value" ]; then
+        echoCC "输入有误."
+        return $?
+    fi
+    local db_name=$(echo $input_value | sed 's/\./_/g')
+    if [ ! -n "$(is_db_exist $db_name)" ]; then
+        echoCC "数据库不存在."
+        return $?
+    fi
+    mysqldump $db_name > $db_back
+    if [ ! -f $db_back ]; then
+        echoCC '备份数据库失败'
+        return $?
+    fi
+    cd $web_root/backup
+    local web_save_name=$(date +%Y-%m-%d.%H%M%S).web.tar.gz
+    tar -C $web_root/$doc_folder -zcf $web_save_name ./
+    if [ ! -f $web_save_name ]; then
+        echoCC '网站备份失败'
+        return $?
+    fi
+    rm $web_root/$doc_folder/$db_back
+    echoSB "备份文件列表, 总容量: $(du -sh)"
+    ls -ghGA | awk 'BEGIN{OFS="\t"} NR > 1 {print $3, $7}'
+    echoGC "备份完成."
+}
+function restore2 {
+    cd $web_root/backup
+    if [ $(ls | wc -l) -eq 0 ]; then
+        echoCC '没有备份文件'
+        return $?
+    fi
+    echo -e "${SB}文件总大小:$ED $(du -sh)"
+    ls -ghGA | awk 'BEGIN{OFS="\t"} NR > 1 {print $3, $7}'
+    echo -ne "$BC请输入要还原的文件名: $ED"
+    read -a site_backup_file
+    if [ -z $site_backup_file ] || [ ! -f $site_backup_file ]; then
+        echoCC "$site_backup_file指定文件不存在"
+        return $?
+    fi
+    if [[ ! $site_backup_file =~ .*\.tar\.gz$ ]]; then
+        echoCC "[$site_backup_file]非指定的压缩格式"
+        return $?
+    fi
+    if [ -d temp ] ; then
+        rm -rf temp
+    fi
+    mkdir temp
+    tar -zxf $site_backup_file -C ./temp
+    cd temp
+    if [ ! -f $db_back ]; then
+        echoCC '找不到SQL文件'
+        return $?
+    fi
+    local db_name=$(echo $input_value | sed 's/\./_/g')
+    drop_db_tables "$db_name"
+    mysql "$db_name" < $db_back
+    rm $db_back
+    local wp_config=$web_root/$doc_folder/wp-config.php
+    if [ -f "$wp_config" ]; then
+        local old_db_name=$(grep -oE "DB_NAME.*[\"\']" $wp_config | sed -r '{s/.*,\s*//}' | sed s/[\'\"]*//g)
+        local old_db_user=$(grep -oE "DB_USER.*[\"\']" $wp_config | sed -r '{s/.*,\s*//}' | sed s/[\'\"]*//g)
+        local old_db_pass=$(grep -oE "DB_PASSWORD.*[\"\']" $wp_config | sed -r '{s/.*,\s*//}' | sed s/[\'\"]*//g)
+        sed -i -r "s/DB_NAME',\s*'(.+)'/DB_NAME', '$old_db_name'/" wp-config.php
+        sed -i -r "s/DB_USER',\s*'(.+)'/DB_USER', '$old_db_user'/" wp-config.php
+        sed -i -r "s/DB_PASSWORD',\s*'(.+)'/DB_PASSWORD', '$old_db_pass'/" wp-config.php
+    fi
+    rm -rf $web_root/$doc_folder/{.[!.],}*
+    mv ./{.[!.],}* $web_root/$doc_folder/ > /dev/null 2>&1
+    cd .. && rm -rf temp
+    cd $web_root
+    chown -R $user:$group $doc_folder/
+    find $doc_folder/ -type d -exec chmod 750 {} \;
+    find $doc_folder/ -type f -exec chmod 640 {} \;
+    service lsws force-reload
+    echoGC '操作完成.'
+}
+function del_backup_file {
+    cd $web_root/backup
+    if [ $(ls | wc -l) -eq 0 ]; then
+        echoCC "没有备份文件."
+        return $?
+    fi
+    echo -e "${SB}文件总大小:$ED $(du -sh)"
+    ls -ghGA | awk 'BEGIN{OFS="\t"} NR > 1 {print $3, $7}'
+    echo -ne "$BC请输入要删除的完整文件名: $ED"; 
+    read -a backup_file_name
+    rm $backup_file_name
+    echoGC "文件删除成功."
+}
+function delete_site {
+    echoCC "请把文件备份到本地,将删除站点[$input_value]全部资料"
+    echo -ne "${BC}确认完全删除站点,输入大写Y: ${ED}"; read -a ny1
+    echo -ne "${BC}确认完全删除站点,输入小写y: ${ED}"; read -a ny2
+    if [ "$ny2" != "y" -o "$ny1" != "Y" ]; then
+        echoCC "已退出删除操作."
+        return $?
+    fi
+    sed -i "/virtual[hH]ost\s*$input_value\s*{/,/}/d" $cf_lsws
+    sed -i -r "/map\s+$input_value/d" $cf_lsws
+    sed -i "/^$/d" $cf_lsws
+    rm -rf $ols_root/conf/vhosts/$input_value
+    echoGC "站点配置文件删除完成."
+    rm -rf $web_root
+    echoGC "站点所有文件删除完成."
+    local db_name=$(echo $input_value | sed 's/\./_/g')
+    if [ -n $(is_db_exist "$db_name") ]; then
+        local db_user=$(mysql -Nse "select distinct user from mysql.db where db = '$db_name';")
+        if [ -n "$db_user" ]; then
+            mysql -e "drop user '$db_user'@'localhost';"
+        fi
+        mysql -e "drop database $db_name;"
+        echoGC "网站数据库已删除完成."
+    else
+        echoYC "[$db_name]数据库删除失败:不存在"
+    fi
+    menu && return $?
+}
+function domain_add {
+    if [ -z "$input_value" ]; then
+        echoRC '接收主机名失败.'
+        return $?
+    fi
+    local domain_list=$(grep map.*$input_value $cf_lsws | awk 'NR==1 {print}' | sed "{s/map\s*$input_value//;s/^[[:space:]]*//}")
+    echo -ne "${SB}已绑定域名列表: ${ED}"
+    echoYC "$domain_list"
+    local old_input_value=$input_value
+    verify_domain
+    local temp=$(echo $domain_list | sed 's/,/ /g')
+    for item in $temp; do
+        if [ "$item" = "$input_value" ]; then
+            echoCC "已绑定: $input_value"
+            input_value=$old_input_value
+            return $?
+        fi
+    done
+    local is_domain=$(query_domain "$input_value")
+    if [ -n "$is_domain" ]; then
+        echoCC "$is_domain"
+        input_value=$old_input_value
+        return $?
+    fi
+    sed -i "s/map\(.*\)$old_input_value.*/map\1 $domain_list, $input_value/" $cf_lsws
+    domain_list=$(grep map.*$old_input_value $cf_lsws | awk 'NR==1 {print}' | sed "{s/map\s*$old_input_value//;s/^[[:space:]]*//}")
+    echoCC "绑定成功: $domain_list"
+    input_value=$old_input_value
+    service lsws force-reload
+}
+function cert_ssl_install {
+    if [ -z "$input_value" ]; then
+        echoRC '接收主机名失败.'
+        return $?
+    fi
+    local cert_path=$web_root/cert
+    if [ ! -d $cert_path ]; then
+        mkdir -p $cert_path
+    fi 
+    if [ ! -f "/root/.acme.sh/acme.sh" ] ; then 
+        curl https://get.acme.sh | sh -s email=admin@$input_value
+        /root/.acme.sh/acme.sh --register-account -m admin@$input_value >/dev/null 2>&1
+        /root/.acme.sh/acme.sh --set-default-ca --server letsencrypt >/dev/null 2>&1
+    fi
+    local vm_bind_domains=$(grep map.*$input_value $cf_lsws | awk 'NR==1 {print}' | sed "{s/map\s*$input_value//;s/^[[:space:]]*//}" | sed 's/,//g')
+    echoCC "将为以下域名申请SSL证书:"
+    echoSB "$vm_bind_domains"
+    local dns_domain_list=()
+    for item in $vm_bind_domains; do
+        local dns_ip=$(dns_query "$item")
+        if [ -n "$dns_ip" ]; then
+             echoRR "[$item -> $dns_ip]:解析失败,该域名无法申请证书."
+        else
+            dns_domain_list[${#dns_domain_list[*]}]=$item
+        fi
+    done
+    if [ ${#dns_domain_list[*]} -eq 0 ]; then
+        echoCC '没有域名解析成功.'
+        return $?
+    fi
+    local domain_list="-d $(echo ${dns_domain_list[@]} | sed 's/ / -d /g')"
+    /root/.acme.sh/acme.sh --issue $domain_list --webroot $web_root/$doc_folder
+    /root/.acme.sh/acme.sh --install-cert $domain_list --cert-file $cert_path/cert.pem --key-file $cert_path/ssl.key --fullchain-file $cert_path/ssl.crt --reloadcmd "service lsws force-reload"
+    echo -e "${GC}证书文件:${ED} ${SB}$cert_path/cert.pem ${ED}"
+    echo -e "${GC}私钥文件:${ED} ${SB}$cert_path/ssl.key ${ED}"
+    echo -e "${GC}证书全链:${ED} ${SB}$cert_path/ssl.crt ${ED}"
+}
+
+function install_ols {
+    cd $run_path
+    if [ -f "$ols_root/bin/lswsctrl" ]; then
+        echoCC "检测到OpenLiteSpeed已安装"
+        return $?
+    fi
+    if [ -d $vhs_root ]; then
+        echoCC "请确保没有${vhs_root}文件夹"
+        return $?
+    fi
+    firewall_rules_create
+    apt update -y
+    apt-get install socat cron curl gnupg unzip iputils-ping apt-transport-https ca-certificates software-properties-common -y
+    mkdir -p $vhs_root
+    wget -O - http://rpms.litespeedtech.com/debian/enable_lst_debian_repo.sh | bash
+    apt install openlitespeed -y
+    local php=$(ls $ols_root | grep -o -m 1 "lsphp[78][0-9]$")
+    if [ -n "$php" ] ; then
+        apt install ${php}-imagick ${php}-curl ${php}-intl -y
+        [ -f /usr/bin/php ]  && rm -f /usr/bin/php
+        ln -s $ols_root/$php/bin/php /usr/bin/php
+    fi
+    cat ./httpd/listener >> $ols_root/conf/httpd_config.conf
+    cat ./httpd/example.crt > $ols_root/conf/example.crt
+    cat ./httpd/example.key > $ols_root/conf/example.key
+    mv $ols_root/Example/html $ols_root/Example/html.bak
+    mkdir $ols_root/Example/html
+    install_maria_db
+    service lsws force-reload
+    echoGC '面板管理账号/密码'
+    echo -ne "$SB"
+    cat $ols_root/adminpasswd | grep -oE admin.*
+    echo -ne "$ED"
+    echoGC '面板地址'
+    echoSB "https://$(query_public_ip):7080"
+}
+function install_maria_db {
+    cd $run_path
+    if [ -f "/usr/bin/mariadb" ]; then
+        echoCC "检测到MariaDB已安装"
+        return $?
+    fi
+    apt-key adv --fetch-keys 'https://mariadb.org/mariadb_release_signing_key.asc'
+    sh -c "echo 'deb https://mirror.rackspace.com/mariadb/repo/10.5/$os_name $os_version main' >>/etc/apt/sources.list"
+    apt update && apt install mariadb-server -y
+    systemctl restart mariadb
+    local root_pwd=$(random_str 12)
+    mysql -uroot -e "flush privileges;"
+    mysqladmin -u root password $root_pwd
+    echoGC "MySQL账号密码"
+    echoSB "root / $root_pwd"
+}
+function install_php_my_admin {
+    local ols=$(check_ols_exist)
+    if [ -n "$ols" ]; then
+        echoCC $ols
+        return $?
+    fi
+    local example=$ols_root/Example
+    cd $example
+    if [ -d "phpMyAdmin" ]; then
+        echoCC '检测到phpMyAdmin已安装!'
+        return $?
+    fi
+    wget -O phpMyAdmin.zip https://files.phpmyadmin.net/phpMyAdmin/4.9.10/phpMyAdmin-4.9.10-all-languages.zip
+    unzip phpMyAdmin.zip > /dev/null 2>&1
+    rm phpMyAdmin.zip
+    mv phpMyAdmin-4.9.10-all-languages phpMyAdmin
+    cd phpMyAdmin
+    mkdir tmp && chmod 777 tmp
+    keybs=$(random_str 64)
+    sed -i "/\$cfg\['blowfish_secret'\]/s/''/'$keybs'/" config.sample.inc.php
+    cd libraries
+    sed -i "/\$cfg\['blowfish_secret'\]/s/''/'$keybs'/" config.default.php
+    mysql < $example/phpMyAdmin/sql/create_tables.sql
+    cat $run_path/vm/context | sed s/context_path/phpMyAdmin/g >> $ols_root/conf/vhosts/Example/vhconf.conf
+    service lsws force-reload
+    echoGC "phpMyAdmin安装完成."
+    echoSB "phpMyAdmin地址: http://$(query_public_ip):8088/phpMyAdmin"
+    cd $run_path
+}
+function create_site {
+    cd $run_path
+    local ols=$(check_ols_exist)
+    if [[ -n $ols ]]; then
+        echoCC $ols
+        return $?
+    fi
+    verify_domain
+    local lsws_hc=$ols_root/conf/httpd_config.conf
+    [ ! -f $lsws_hc ] && echoRC "服务器致命错误." && exit 0
+    local is_domain=$(query_domain "$input_value")
+    if [ -n "$is_domain" ]; then
+        echoCC "$is_domain"
+        return $?
+    fi
+    if [ -d "$vhs_root/$input_value" ]; then
+        echoCC "[$input_value]站点已存在."
+        return $?
+    fi
+    local db_name=$(echo $input_value | sed 's/\./_/g')
+    local db_user=$(random_str 12)
+    local db_pass=$(random_str 10)
+    if [ -n "$(is_db_exist $db_name)" ]; then
+        echoCC "数据库已存在."
+        return $?
+    fi
+    local site_doc_root=$vhs_root/$input_value
+    mkdir -p $site_doc_root/{backup,logs,cert,$doc_folder}
+    cat ./httpd/example.crt > $site_doc_root/cert/ssl.crt
+    cat ./httpd/example.key > $site_doc_root/cert/ssl.key
+    local vhost_path=$ols_root/conf/vhosts/$input_value
+    mkdir -p $vhost_path
+    cat ./vm/vhconf | sed "s/replace_path/$input_value/" > $vhost_path/vhconf.conf
+    cat ./httpd/vhost | sed "s/\$host_name/$input_value/" >> $lsws_hc
+    sed -i "/listener HTTPs* {/a map        $input_value $input_value" $lsws_hc
+    chown -R lsadm:$group $vhost_path
+    mysql -Nse "create database $db_name"
+    mysql -Nse "grant all privileges on $db_name.* to '$db_user'@'localhost' identified by '$db_pass'"
+    mysql -Nse "flush privileges"
+    echo -ne "$BC是否安装WordPrss(y/N):$ED "
+    read -a iswp
+    if [ "$iswp" = "y" -o "$iswp" = "Y" ]; then
+        cd $site_doc_root/$doc_folder
+        install_wp "db_name=$db_name" "db_user=$db_user" "db_pass=$db_pass"
+    else
+        echo 'This a Temp Site.' >  $site_doc_root/$doc_folder/index.php
+    fi
+    cd $site_doc_root
+    chown -R $user:$group $doc_folder/
+    find $doc_folder/ -type d -exec chmod 750 {} \;
+    find $doc_folder/ -type f -exec chmod 640 {} \;
+    cd $run_path
+    systemctl restart lsws
+    clear
+    echoGC "站点安装完成, ${CC}以下信息只显示一次."
+    echoSB "地址: http://$input_value"
+    if [ -n "$wp_user" ]; then
+        echoSB "账号: $wp_user"
+        echoSB "密码: $wp_pass"
+    fi
+    echoGC "数据库信息"
+    echoSB "名称: ${db_name}"
+    echoSB "账号: ${db_user}"
+    echoSB "密码: ${db_pass}"
+    input_value=''
+}
+function reset_ols_user_password {
+    if [ ! -d $ols_root ]; then
+        echoCC "未安装OpenLiteSpeed"
+        return $?
+    fi
+    echoCC "面板用户密码重置成功后.原有的所有用户将删除."
+    local user; local pass1; local pass2
+    while true; do
+        echo -ne "${BC}输入账号(默认:admin): ${ED}"
+        read -a user
+        [ -z "$user" ] && user=admin
+        [ $(expr "$user" : '.*') -ge 5 ] && break
+        echoCC "账号长度不能小于5位."
+    done
+    while true; do
+        echo -ne "${BC}输入密码: ${ED}"
+        read -a pass1
+        if [ `expr "$pass1" : '.*'` -lt 6 ]; then
+            echoCC "密码长度不能小于6位."
+            continue
+        fi
+        echo -ne "${BC}密码确认: ${ED}" 
+        read -a pass2
+        if [ "$pass1" != "$pass2" ]; then
+            echoCC "密码不匹配,再试一次."
+            continue
+        fi
+        break
+    done
+    cd $ols_root/admin/fcgi-bin
+    local encrypt_pass=$(./admin_php -q ../misc/htpasswd.php $pass1)
+    echo "$user:$encrypt_pass" > ../conf/htpasswd
+    cd $run_path
+    echoGC "面板用户密码重置完成."
+}
+function site_cmd {
+    cd $run_path
+    local ols=$(check_ols_exist)
+    if [[ -n $ols ]]; then
+        echoCC $ols
+        return $?
+    fi
+    display_vm_host
+    [ -z "$input_value" ] && echoPC "获取站点信息失败." && return $?
+    web_root=$vhs_root/$input_value
+    while true; do
+        echo -e "${YC}1${ED}.${LG}备份${ED}"
+        echo -e "${YC}2${ED}.${LG}还原${ED}"
+        echo -e "${YC}3${ED}.${LG}删除备份${ED}"
+        echo -e "${YC}4${ED}.${LG}删除站点${ED}"
+        echo -e "${YC}d${ED}.${LG}追加域名${ED}"
+        echo -e "${YC}f${ED}.${LG}安装证书${ED}"
+        echo -e "${YC}e${ED}.${LG}返回${ED}"
+        echo -ne "${BC}请选择: ${ED}"
+        read -a num2
+        case $num2 in 
+            1) backup2 ;;
+            2) restore2 ;;
+            3) del_backup_file ;;
+            4) delete_site ;;
+            d) domain_add ;;
+            f) cert_ssl_install ;;
+            e) break ;;
+            *) echoCC '输入有误.'
+        esac
+        continue
+    done
+    input_value=''
+    cd $run_path
+}
+function menu {
+    while true; do
+        echo -e "${YC}1${ED}.${LG}安装面板和数据库${ED}[${PC}必须${ED}]"
+        echo -e "${YC}2${ED}.${LG}安装PHPMyAdmin${ED}"
+        echo -e "${YC}3${ED}.${LG}添加一个站点${ED}"
+        echo -e "${YC}4${ED}.${LG}常用站点指令${ED}"
+        echo -e "${YC}5${ED}.${LG}重置面板用户密码${ED}"
+        echo -e "${YC}e${ED}.${LG}退出${ED}"
+        echo -ne "${BC}请选择: ${ED}"
+        read -a num
+        case $num in
+            1) install_ols ;;
+            2) install_php_my_admin ;;
+            3) create_site ;;
+            4) site_cmd ;;
+            5) reset_ols_user_password ;;
+            e) exit 0 ;;
+            *) clear
+        esac
+        continue
+    done
+    clear
+}
+echoGC "WordPress外贸建站学习QQ群:783107859"
+echoCC "仅支持Debian[9, 10, 11] 和 Ubuntu[18.04, 20.04]"
+menu
+
