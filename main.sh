@@ -26,13 +26,20 @@ function install_ols {
     wget -O - https://repo.litespeed.sh | bash
     #安装面板
     apt install openlitespeed -y
+    #获取面板默认安装PHP版本
+    local php=$(ls $ols_root | grep -o -m 1 "lsphp[78][0-9]$")
+    #安装WordPress 的 PHP 扩展
+    if [ -n "$php" ] ; then
+        #wordpress 必须组件 lsphp74-redis lsphp74-memcached
+        apt install ${php}-imagick ${php}-curl ${php}-intl ${php}-opcache -y
+        #删除其他PHP
+        [ -f /usr/bin/php ]  && rm -f /usr/bin/php
+        #创建PHP软链接
+        ln -s $ols_root/$php/bin/php /usr/bin/php
+    fi
     # 安装PHP 和 扩展
-    apt install lsphp74 lsphp74-common lsphp74-intl lsphp74-curl lsphp74-opcache lsphp74-imagick lsphp74-mysql -y 
+    # apt install lsphp74 lsphp74-common lsphp74-intl lsphp74-curl lsphp74-opcache lsphp74-imagick lsphp74-mysql -y 
     apt install lsphp81 lsphp81-common lsphp81-intl lsphp81-curl lsphp81-opcache lsphp81-imagick lsphp81-mysql lsphp81-memcached -y
-    #删除其他PHP
-    [ -f /usr/bin/php ] && rm -f /usr/bin/php
-    #创建PHP软链接
-    ln -s $ols_root/lsphp74/bin/php /usr/bin/php
     #添加监听器
     cat ./httpd/listener >> $ols_root/conf/httpd_config.conf
     #添加SSL证书

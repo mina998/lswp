@@ -11,7 +11,8 @@ function is_db_exist {
 }
 # 从网络获取本机IP(防止有些机器无法获取公网IP)  
 function query_public_ip {
-    echo $(wget -U Mozilla -qO - http://ip.42.pl/raw)
+#    echo $(wget -U Mozilla -qO - http://ip.42.pl/raw)
+    echo $(curl -s http://checkip.amazonaws.com)
 }
 # 创建防火墙规则
 function firewall_rules_create {
